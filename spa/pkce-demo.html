@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PKCE Demo</title>
+  <style>
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }
+    pre  { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; word-break: break-all; white-space: pre-wrap; }
+    button { padding: 10px 20px; font-size: 14px; cursor: pointer; }
+    #status { margin-top: 12px; color: #555; }
+    .section { margin-top: 24px; }
+    h3 { margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <h1>PKCE OAuth2 Demo</h1>
+  <p>Public client using <strong>Authorization Code + PKCE</strong> — no client secret required.</p>
+
+  <button id="loginBtn" onclick="startLogin()">Login with PKCE</button>
+  <div id="status"></div>
+
+  <div class="section" id="tokenSection" style="display:none">
+    <h3>Token Response</h3>
+    <pre id="tokenOutput"></pre>
+  </div>
+
+  <div class="section" id="userSection" style="display:none">
+    <h3>UserInfo</h3>
+    <pre id="userOutput"></pre>
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <script>
+    const AUTH_SERVER = 'http://127.0.0.1:9000';
+    const CLIENT_ID   = 'pkce-client';
+    const REDIRECT_URI = 'http://127.0.0.1:7000/pkce-demo.html';
+    const SCOPES      = 'openid profile';
+
+    // ── PKCE helpers ──────────────────────────────────────────────────────────
+    function randomBase64url(len) {
+      const buf = crypto.getRandomValues(new Uint8Array(len));
+      return btoa(String.fromCharCode(...buf))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    async function sha256Base64url(plain) {
+      const data = new TextEncoder().encode(plain);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    // ── Step 1 : redirect to authorization endpoint ───────────────────────────
+    async function startLogin() {
+      const verifier  = randomBase64url(64);
+      const challenge = await sha256Base64url(verifier);
+      const state     = randomBase64url(16);
+
+      sessionStorage.setItem('pkce_verifier', verifier);
+      sessionStorage.setItem('pkce_state',    state);
+
+      const params = new URLSearchParams({
+        response_type:         'code',
+        client_id:             CLIENT_ID,
+        redirect_uri:          REDIRECT_URI,
+        scope:                 SCOPES,
+        state,
+        code_challenge:        challenge,
+        code_challenge_method: 'S256',
+      });
+
+      window.location.href = `${AUTH_SERVER}/oauth2/authorize?${params}`;
+    }
+
+    // ── Step 2 : exchange auth code for tokens ────────────────────────────────
+    async function handleCallback(code, returnedState) {
+      const verifier = sessionStorage.getItem('pkce_verifier');
+      const state    = sessionStorage.getItem('pkce_state');
+
+      if (returnedState !== state) {
+        setStatus('State mismatch — possible CSRF. Aborting.');
+        return;
+      }
+
+      sessionStorage.removeItem('pkce_verifier');
+      sessionStorage.removeItem('pkce_state');
+
+      setStatus('Exchanging authorization code for tokens…');
+
+      const body = new URLSearchParams({
+        grant_type:    'authorization_code',
+        client_id:     CLIENT_ID,
+        redirect_uri:  REDIRECT_URI,
+        code,
+        code_verifier: verifier,
+      });
+
+      const res = await fetch(`${AUTH_SERVER}/oauth2/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      const tokens = await res.json();
+      if (!res.ok) {
+        setStatus('Token exchange failed.');
+        show('tokenSection');
+        document.getElementById('tokenOutput').textContent = JSON.stringify(tokens, null, 2);
+        return;
+      }
+
+      sessionStorage.setItem('access_token', tokens.access_token);
+      show('tokenSection');
+      document.getElementById('tokenOutput').textContent = JSON.stringify(tokens, null, 2);
+      setStatus('Tokens received. Fetching user info…');
+
+      // Remove the code from the URL without reloading
+      window.history.replaceState({}, document.title, REDIRECT_URI);
+
+      await fetchUserInfo(tokens.access_token);
+    }
+
+    // ── Step 3 : call userinfo endpoint ──────────────────────────────────────
+    async function fetchUserInfo(accessToken) {
+      const res  = await fetch(`${AUTH_SERVER}/userinfo`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const info = await res.json();
+      show('userSection');
+      document.getElementById('userOutput').textContent = JSON.stringify(info, null, 2);
+      setStatus('');
+    }
+
+    function logout() {
+      sessionStorage.clear();
+      window.location.href = `${AUTH_SERVER}/logout`;
+    }
+
+    // ── Bootstrap ─────────────────────────────────────────────────────────────
+    function setStatus(msg) { document.getElementById('status').textContent = msg; }
+    function show(id) { document.getElementById(id).style.display = 'block'; }
+
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code   = params.get('code');
+      const state  = params.get('state');
+
+      if (code) {
+        document.getElementById('loginBtn').style.display = 'none';
+        await handleCallback(code, state);
+      } else if (params.get('error')) {
+        setStatus(`Authorization error: ${params.get('error_description') ?? params.get('error')}`);
+      }
+    })();
+  </script>
+</body>
+</html>
