@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: resource-server
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://127.0.0.1:9000 #Optional if you have jwk-set-uri
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
