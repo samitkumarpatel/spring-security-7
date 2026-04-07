@@ -9,10 +9,6 @@ spring:
   application:
     name: auth-server
   security:
-    user:
-      name: samit
-      password: samit123
-      roles: read,write
     oauth2:
       client:
         registration:

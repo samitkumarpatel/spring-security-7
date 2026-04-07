@@ -5,6 +5,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.support.RestClientAdapter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
@@ -36,6 +39,17 @@ public class ResourceServerApplication {
 				.route()
 				.GET("/api/user", request -> ServerResponse.ok().body(jsonPlaceHolderClient.allUser()))
 				.build();
+	}
+
+	@Bean
+	CorsConfigurationSource corsConfigurationSource() {
+		CorsConfiguration config = new CorsConfiguration();
+		config.setAllowedOriginPatterns(List.of("*"));
+		config.setAllowedMethods(List.of("GET", "OPTIONS"));
+		config.setAllowedHeaders(List.of("*"));
+		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+		source.registerCorsConfiguration("/api/user", config);
+		return source;
 	}
 }
 

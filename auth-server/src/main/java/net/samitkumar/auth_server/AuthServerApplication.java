@@ -97,9 +97,15 @@ public class AuthServerApplication {
 				.csrf(csrf -> csrf.ignoringRequestMatchers("/register"))
 				.oneTimeTokenLogin(ott -> ott
 						.tokenGenerationSuccessHandler((request, response, oneTimeToken) -> {
+							IO.println("### REQUEST URI - 1" + request.getRequestURI());
 							String ottUrl = "/login/ott?token=" + oneTimeToken.getTokenValue();
 							IO.println("### OTT link: http://localhost:" + request.getServerPort() + ottUrl);
 							response.sendRedirect(ottUrl);
+						}).successHandler((request, response, authentication) -> {
+							//This has to redirect to redirectURI
+							IO.println("### REQUEST URI - 2" + request.getRequestURI());
+							response.sendRedirect("/secure");
+
 						})
 				)
 				.build();
